@@ -1,0 +1,11 @@
+{
+  "name": "tiny-json-api",
+  "version": "1.0.0",
+  "description": "Smallest possible backend — two JSON endpoints, zero dependencies.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "keywords": ["api", "json", "minimal"],
+  "license": "MIT"
+}
