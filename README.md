@@ -141,7 +141,17 @@ DELETE FROM tasks WHERE done = 1;
 
 ## Database Viewer Screenshot
 
-> 📸 *(See `db-screenshot.png` in the repository root — taken after running Stage 4 queries in DB Browser for SQLite)*
+The screenshot below shows the `tasks` table open in **DB Browser for SQLite**, displaying all 5 rows with their `id`, `title`, `done`, `created_at`, and `updated_at` columns:
+
+![DB Browser for SQLite showing the tasks table](db-screenshot.png)
+
+---
+
+## Swagger API Docs Screenshot
+
+Interactive API documentation available at `http://localhost:3000/api-docs`:
+
+![Swagger UI showing all CRUD endpoints](swagger-screenshot.png)
 
 ---
 
