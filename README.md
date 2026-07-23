@@ -1,174 +1,125 @@
-# Tasks API — SQLite Edition
+# Task API — PostgreSQL + Docker (A3)
 
-A Node.js + Express CRUD API for managing tasks, backed by a **SQLite database** (`tasks.db`).  
-Data now **survives server restarts** — tasks are stored on disk, not in memory.
-
----
-
-## Why SQLite?
-
-SQLite was chosen because:
-- **Zero configuration** — no separate database server to install or run
-- **Single file** — the entire database lives in `tasks.db` in the project root
-- **Perfect for learning** — shows the separation between API layer and data layer without operational overhead
-- **Production-proven** — used in millions of apps worldwide (browsers, mobile apps, embedded systems)
+A CRUD REST API for managing tasks, built with **Express** and **PostgreSQL** running in **Docker**.  
+This is the third storage iteration of the same API: memory (A1) → SQLite (A2) → containerized Postgres (A3).  
+The API surface never changed. Only the repository file was swapped each time.
 
 ---
 
-## Where is the database file?
-
-```
-Flyrank Assignment1/
-├── tasks.db       ← SQLite database (created automatically on first run)
-├── server.js
-├── package.json
-└── README.md
-```
-
-The file is created **automatically** the first time you run the server.  
-On first run, **3 example tasks** are seeded. They will not be re-inserted on subsequent restarts.
-
----
-
-## How to start the project
-
-### 1. Install dependencies
+## One-command startup
 
 ```bash
-npm install
+# Copy environment template
+cp .env.example .env
+
+# Start everything (Postgres + app)
+docker compose up --build
 ```
 
-### 2. Start the server
-
-```bash
-npm start
-```
-
-Server starts at `http://localhost:3000`.  
-Interactive API docs (Swagger UI) available at `http://localhost:3000/api-docs`.
+App: <http://localhost:3000>  
+Swagger UI: <http://localhost:3000/api-docs>  
+Health check: <http://localhost:3000/health>
 
 ---
 
-## API Endpoints
+## Environment variables
 
-Both `/tasks` and `/todos` routes are supported (identical behaviour).
+Copy `.env.example` → `.env` and fill in your values. **Never commit `.env`.**
 
-| Method | Path           | Description                        | Status codes    |
-|--------|----------------|------------------------------------|-----------------|
-| GET    | `/tasks`       | Return all tasks                   | 200             |
-| GET    | `/tasks?search=milk` | Search tasks by title (LIKE) | 200             |
-| GET    | `/tasks?done=true`   | Filter by completion status  | 200             |
-| GET    | `/tasks/:id`   | Return one task by id              | 200, 404        |
-| POST   | `/tasks`       | Create a new task                  | 201, 400        |
-| PUT    | `/tasks/:id`   | Update title and/or done status    | 200, 404        |
-| DELETE | `/tasks/:id`   | Delete a task                      | 200, 404        |
-| GET    | `/stats`       | Task counts (total/done/pending)   | 200             |
+| Variable | Example | Description |
+|---|---|---|
+| `DATABASE_URL` | `postgres://postgres:dev@localhost:5432/tasks` | Postgres connection string |
+| `PORT` | `3000` | Port the app listens on |
 
 ---
 
-## Test with curl
+## Endpoints
+
+| Method | Path | Description | Success | Error |
+|---|---|---|---|---|
+| `GET` | `/tasks` | List all tasks (supports `?search=` and `?done=`) | 200 | — |
+| `GET` | `/tasks/:id` | Get one task | 200 | 404 |
+| `POST` | `/tasks` | Create a task (`{ "title": "..." }`) | 201 | 400 |
+| `PUT` | `/tasks/:id` | Update a task (`{ "title": "...", "done": true }`) | 200 | 404 |
+| `DELETE` | `/tasks/:id` | Delete a task | 204 | 404 |
+| `GET` | `/stats` | Task counts (total / completed / pending) | 200 | — |
+| `GET` | `/health` | Health check — pings the database | 200 | 503 |
+
+> `/todos` is an alias for all `/tasks` routes.
+
+---
+
+## Example curl commands
 
 ```bash
-# Get all tasks
-curl http://localhost:3000/tasks
-
-# Get one task
-curl http://localhost:3000/tasks/1
+# List all tasks
+curl -i http://localhost:3000/tasks
 
 # Create a task
-curl -X POST http://localhost:3000/tasks \
+curl -i -X POST http://localhost:3000/tasks \
   -H "Content-Type: application/json" \
-  -d "{\"title\": \"Learn SQLite\"}"
+  -d '{"title":"Ship A3"}'
 
-# Mark as done
-curl -X PUT http://localhost:3000/tasks/1 \
+# Mark done
+curl -i -X PUT http://localhost:3000/tasks/1 \
   -H "Content-Type: application/json" \
-  -d "{\"done\": true}"
+  -d '{"done":true}'
 
-# Delete a task
-curl -X DELETE http://localhost:3000/tasks/4
+# Delete
+curl -i -X DELETE http://localhost:3000/tasks/1
 
-# Search tasks
-curl "http://localhost:3000/tasks?search=buy"
-
-# Filter completed tasks
-curl "http://localhost:3000/tasks?done=true"
-
-# Get statistics
-curl http://localhost:3000/stats
+# 404 example
+curl -i http://localhost:3000/tasks/999
 ```
 
 ---
 
-## Database Schema
+## Proving persistence
 
-```sql
-CREATE TABLE tasks (
-  id         INTEGER PRIMARY KEY AUTOINCREMENT,
-  title      TEXT    NOT NULL,
-  done       INTEGER NOT NULL DEFAULT 0,   -- 0 = false, 1 = true
-  created_at TEXT    NOT NULL,
-  updated_at TEXT    NOT NULL
-);
+```bash
+# 1. Start the stack and create some tasks
+docker compose up --build -d
+curl -X POST http://localhost:3000/tasks -H "Content-Type: application/json" -d '{"title":"Survive restart"}'
+
+# 2. Tear everything down (containers gone, volume stays)
+docker compose down
+
+# 3. Bring it back — rows are still there
+docker compose up -d
+curl http://localhost:3000/tasks   # ← "Survive restart" is still here
 ```
-
----
-
-## Example SQL Queries (Stage 4)
-
-Open `tasks.db` in [DB Browser for SQLite](https://sqlitebrowser.org/) and run these:
-
-```sql
--- List every task
-SELECT * FROM tasks;
-
--- Show only completed tasks
-SELECT * FROM tasks WHERE done = 1;
-
--- Count all tasks
-SELECT COUNT(*) FROM tasks;
-
--- Mark every task as completed
-UPDATE tasks SET done = 1;
-
--- Delete all completed tasks
-DELETE FROM tasks WHERE done = 1;
-```
-
-> **Note:** Changes made directly in the database are immediately reflected in the API.
-
----
-
-## Database Viewer Screenshot
-
-The screenshot below shows the `tasks` table open in **DB Browser for SQLite**, displaying all 5 rows with their `id`, `title`, `done`, `created_at`, and `updated_at` columns:
-
-![DB Browser for SQLite showing the tasks table](db-screenshot.png)
-
----
-
-## Swagger API Docs Screenshot
-
-Interactive API documentation available at `http://localhost:3000/api-docs`:
-
-![Swagger UI showing all CRUD endpoints](swagger-screenshot.png)
 
 ---
 
 ## Architecture
 
 ```
-Client Request
-      │
-      ▼
- Express Router  (/tasks or /todos)
-      │
-      ▼
- better-sqlite3  (synchronous SQL queries)
-      │
-      ▼
-   tasks.db      (SQLite file on disk)
+server.js          ← Express routes + Swagger (no DB code)
+src/
+  db.js            ← pg Pool (reads DATABASE_URL)
+  repository.js    ← ONLY file that touches Postgres
+Dockerfile         ← builds the app image
+compose.yaml       ← wires api + db services together
+.env               ← secrets (gitignored)
+.env.example       ← committed template
 ```
 
-The API layer and the data layer are completely separate.  
-Moving from SQLite to PostgreSQL or MySQL would only require changing the database queries — not the endpoints.
+**Swapping storage = changing one file (`src/repository.js`).** Routes and handlers are untouched across all three storage iterations. This is the architecture proof the assignment asks for.
+
+---
+
+## Running locally (without Docker)
+
+```bash
+# Requires a local Postgres or a running `docker run` container
+npm install
+# Set DATABASE_URL in .env pointing to your Postgres
+npm start
+```
+
+---
+
+## Database screenshot
+
+<!-- Replace with your own psql screenshot after running docker compose up -->
+![DB screenshot](db-screenshot.png)
