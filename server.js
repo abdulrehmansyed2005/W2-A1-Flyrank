@@ -1,40 +1,19 @@
-const express = require('express');
-const swaggerUi = require('swagger-ui-express');
-const swaggerJsdoc = require('swagger-jsdoc');
-const Database = require('better-sqlite3');
+'use strict';
 
-const app = express();
+// Load .env before anything else so DATABASE_URL is available
+require('dotenv').config();
+
+const express    = require('express');
+const swaggerUi  = require('swagger-ui-express');
+const swaggerJsdoc = require('swagger-jsdoc');
+
+// ─── Repository (the ONLY place that talks to Postgres) ──────────────────────
+const repo = require('./src/repository');
+
+const app  = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
-
-// ─── Stage 0: Database Setup ────────────────────────────────────────────────
-// Open (or create) the SQLite database file
-const db = new Database('tasks.db');
-
-// Create the tasks table if it doesn't already exist
-db.exec(`
-  CREATE TABLE IF NOT EXISTS tasks (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    title      TEXT    NOT NULL,
-    done       INTEGER NOT NULL DEFAULT 0,
-    created_at TEXT    NOT NULL,
-    updated_at TEXT    NOT NULL
-  )
-`);
-
-// Seed three example tasks only on the very first run (when the table is empty)
-const rowCount = db.prepare('SELECT COUNT(*) AS count FROM tasks').get();
-if (rowCount.count === 0) {
-  const now = new Date().toISOString();
-  const seed = db.prepare(
-    'INSERT INTO tasks (title, done, created_at, updated_at) VALUES (?, 0, ?, ?)'
-  );
-  seed.run('Buy groceries', now, now);
-  seed.run('Walk the dog', now, now);
-  seed.run('Read a book', now, now);
-  console.log('✅ Seeded 3 example tasks into the database.');
-}
 
 // ─── Swagger Setup ──────────────────────────────────────────────────────────
 const swaggerOptions = {
@@ -42,10 +21,10 @@ const swaggerOptions = {
     openapi: '3.0.0',
     info: {
       title: 'Tasks / To-Do API',
-      version: '2.0.0',
+      version: '3.0.0',
       description:
-        'A CRUD API for managing tasks — now backed by a SQLite database. ' +
-        'Data persists across server restarts. Both /todos and /tasks routes are supported.',
+        'A CRUD API for managing tasks — backed by PostgreSQL in Docker. ' +
+        'Data persists across restarts. Start the whole stack with: docker compose up',
     },
     servers: [{ url: `http://localhost:${PORT}` }],
   },
@@ -54,12 +33,6 @@ const swaggerOptions = {
 
 const swaggerSpec = swaggerJsdoc(swaggerOptions);
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
-
-// ─── Helper ─────────────────────────────────────────────────────────────────
-// Convert SQLite integer (0/1) to a proper JS boolean for API responses
-function formatTask(task) {
-  return { ...task, done: task.done === 1 };
-}
 
 // ─── Swagger Schemas ────────────────────────────────────────────────────────
 
@@ -106,7 +79,7 @@ function formatTask(task) {
  *     description: Database statistics
  */
 
-// ─── Stage 1: GET all tasks ─────────────────────────────────────────────────
+// ─── Stage 2: GET all tasks ─────────────────────────────────────────────────
 
 /**
  * @swagger
@@ -119,7 +92,7 @@ function formatTask(task) {
  *         name: search
  *         schema:
  *           type: string
- *         description: Filter tasks by title (SQL LIKE search)
+ *         description: Filter tasks by title (case-insensitive ILIKE search)
  *       - in: query
  *         name: done
  *         schema:
@@ -135,40 +108,16 @@ function formatTask(task) {
  *               items:
  *                 $ref: '#/components/schemas/Task'
  */
-function getAllTasksHandler(req, res) {
+async function getAllTasksHandler(req, res) {
   const { search, done } = req.query;
-
-  let query = 'SELECT * FROM tasks';
-  const params = [];
-  const conditions = [];
-
-  // Optional: filter by search term using LIKE
-  if (search) {
-    conditions.push('title LIKE ?');
-    params.push(`%${search}%`);
-  }
-
-  // Optional: filter by done status
-  if (done !== undefined) {
-    conditions.push('done = ?');
-    params.push(done === 'true' ? 1 : 0);
-  }
-
-  if (conditions.length > 0) {
-    query += ' WHERE ' + conditions.join(' AND ');
-  }
-
-  // Optional: sort alphabetically by title
-  query += ' ORDER BY title ASC';
-
-  const tasks = db.prepare(query).all(...params);
-  res.json(tasks.map(formatTask));
+  const tasks = await repo.getAll(search, done);
+  res.json(tasks);
 }
 
 app.get('/tasks', getAllTasksHandler);
 app.get('/todos', getAllTasksHandler);
 
-// ─── Stage 1: GET single task ────────────────────────────────────────────────
+// ─── Stage 2: GET single task ────────────────────────────────────────────────
 
 /**
  * @swagger
@@ -193,16 +142,16 @@ app.get('/todos', getAllTasksHandler);
  *       404:
  *         description: Task not found
  */
-function getOneTaskHandler(req, res) {
-  const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(req.params.id);
+async function getOneTaskHandler(req, res) {
+  const task = await repo.getById(req.params.id);
   if (!task) return res.status(404).json({ error: 'Task not found' });
-  res.json(formatTask(task));
+  res.json(task);
 }
 
 app.get('/tasks/:id', getOneTaskHandler);
 app.get('/todos/:id', getOneTaskHandler);
 
-// ─── Stage 2: POST — create a new task ──────────────────────────────────────
+// ─── Stage 3: POST — create a new task ──────────────────────────────────────
 
 /**
  * @swagger
@@ -231,20 +180,13 @@ app.get('/todos/:id', getOneTaskHandler);
  *       400:
  *         description: Title is required
  */
-function createTaskHandler(req, res) {
+async function createTaskHandler(req, res) {
   const { title } = req.body;
   if (!title || title.trim() === '') {
     return res.status(400).json({ error: 'Title is required' });
   }
-
-  const now = new Date().toISOString();
-  const result = db
-    .prepare('INSERT INTO tasks (title, done, created_at, updated_at) VALUES (?, 0, ?, ?)')
-    .run(title.trim(), now, now);
-
-  // Fetch the newly created task to return it
-  const newTask = db.prepare('SELECT * FROM tasks WHERE id = ?').get(result.lastInsertRowid);
-  res.status(201).json(formatTask(newTask));
+  const newTask = await repo.create(title.trim());
+  res.status(201).json(newTask);
 }
 
 app.post('/tasks', createTaskHandler);
@@ -286,21 +228,11 @@ app.post('/todos', createTaskHandler);
  *       404:
  *         description: Task not found
  */
-function updateTaskHandler(req, res) {
-  const existing = db.prepare('SELECT * FROM tasks WHERE id = ?').get(req.params.id);
-  if (!existing) return res.status(404).json({ error: 'Task not found' });
-
+async function updateTaskHandler(req, res) {
   const { title, done } = req.body;
-  const updatedTitle = title !== undefined ? title.trim() : existing.title;
-  const updatedDone  = done  !== undefined ? (done ? 1 : 0) : existing.done;
-  const now = new Date().toISOString();
-
-  db.prepare(
-    'UPDATE tasks SET title = ?, done = ?, updated_at = ? WHERE id = ?'
-  ).run(updatedTitle, updatedDone, now, req.params.id);
-
-  const updatedTask = db.prepare('SELECT * FROM tasks WHERE id = ?').get(req.params.id);
-  res.json(formatTask(updatedTask));
+  const updated = await repo.update(req.params.id, { title, done });
+  if (!updated) return res.status(404).json({ error: 'Task not found' });
+  res.json(updated);
 }
 
 app.put('/tasks/:id', updateTaskHandler);
@@ -322,23 +254,21 @@ app.put('/todos/:id', updateTaskHandler);
  *           type: integer
  *         description: The task id
  *     responses:
- *       200:
- *         description: Task deleted successfully
+ *       204:
+ *         description: Task deleted successfully (no body)
  *       404:
  *         description: Task not found
  */
-function deleteTaskHandler(req, res) {
-  const existing = db.prepare('SELECT * FROM tasks WHERE id = ?').get(req.params.id);
-  if (!existing) return res.status(404).json({ error: 'Task not found' });
-
-  db.prepare('DELETE FROM tasks WHERE id = ?').run(req.params.id);
-  res.json({ message: 'Task deleted successfully' });
+async function deleteTaskHandler(req, res) {
+  const deleted = await repo.remove(req.params.id);
+  if (!deleted) return res.status(404).json({ error: 'Task not found' });
+  res.status(204).send();
 }
 
 app.delete('/tasks/:id', deleteTaskHandler);
 app.delete('/todos/:id', deleteTaskHandler);
 
-// ─── Optional Extra: GET /stats ──────────────────────────────────────────────
+// ─── GET /stats ──────────────────────────────────────────────────────────────
 
 /**
  * @swagger
@@ -361,31 +291,58 @@ app.delete('/todos/:id', deleteTaskHandler);
  *                 pending:
  *                   type: integer
  */
-app.get('/stats', (req, res) => {
-  const total     = db.prepare('SELECT COUNT(*) AS count FROM tasks').get().count;
-  const completed = db.prepare('SELECT COUNT(*) AS count FROM tasks WHERE done = 1').get().count;
-  const pending   = db.prepare('SELECT COUNT(*) AS count FROM tasks WHERE done = 0').get().count;
-  res.json({ total, completed, pending });
+app.get('/stats', async (req, res) => {
+  const stats = await repo.getStats();
+  res.json(stats);
 });
 
-// ─── Original utility routes (kept for backward compatibility) ───────────────
+// ─── GET /health ─────────────────────────────────────────────────────────────
+
+/**
+ * @swagger
+ * /health:
+ *   get:
+ *     summary: Health check — pings the database
+ *     tags: [Stats]
+ *     responses:
+ *       200:
+ *         description: Service and database are healthy
+ *       503:
+ *         description: Database unreachable
+ */
+app.get('/health', async (req, res) => {
+  try {
+    const pool = require('./src/db');
+    await pool.query('SELECT 1');
+    res.json({ status: 'ok', db: 'ok' });
+  } catch (err) {
+    res.status(503).json({ status: 'error', db: err.message });
+  }
+});
+
+// ─── Utility routes (backward compatibility) ─────────────────────────────────
 app.get('/api/hello', (req, res) => {
-  res.json({
-    message: 'Hello, world!',
-    timestamp: new Date().toISOString(),
-  });
+  res.json({ message: 'Hello, world!', timestamp: new Date().toISOString() });
 });
 
 app.get('/api/time', (req, res) => {
-  res.json({
-    utc: new Date().toUTCString(),
-    unix: Date.now(),
-  });
+  res.json({ utc: new Date().toUTCString(), unix: Date.now() });
 });
 
 // ─── Start server ────────────────────────────────────────────────────────────
-app.listen(PORT, () => {
-  console.log(`Server running    → http://localhost:${PORT}`);
-  console.log(`Swagger Docs      → http://localhost:${PORT}/api-docs`);
-  console.log(`Database file     → tasks.db`);
-});
+async function start() {
+  try {
+    await repo.initDb();   // create table + seed on first run
+    app.listen(PORT, () => {
+      console.log(`Server running    → http://localhost:${PORT}`);
+      console.log(`Swagger Docs      → http://localhost:${PORT}/api-docs`);
+      console.log(`Health check      → http://localhost:${PORT}/health`);
+      console.log(`Database          → ${process.env.DATABASE_URL}`);
+    });
+  } catch (err) {
+    console.error('❌ Failed to connect to database:', err.message);
+    process.exit(1);
+  }
+}
+
+start();

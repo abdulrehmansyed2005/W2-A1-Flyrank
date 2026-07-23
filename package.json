@@ -1,20 +1,18 @@
 {
   "name": "tiny-json-api",
-  "version": "1.0.0",
-  "description": "Smallest possible backend — two JSON endpoints, zero dependencies.",
+  "version": "3.0.0",
+  "description": "Task CRUD API — Express + PostgreSQL in Docker. Start everything with: docker compose up",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "dev": "node --watch server.js"
   },
-  "keywords": [
-    "api",
-    "json",
-    "minimal"
-  ],
+  "keywords": ["api", "json", "postgres", "docker"],
   "license": "MIT",
   "dependencies": {
-    "better-sqlite3": "^12.11.1",
+    "dotenv": "^16.5.0",
     "express": "^5.2.1",
+    "pg": "^8.13.3",
     "swagger-jsdoc": "^6.3.0",
     "swagger-ui-express": "^5.0.1"
   }
