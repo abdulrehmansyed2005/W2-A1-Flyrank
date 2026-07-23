@@ -1,0 +1,35 @@
+services:
+
+  # ── Database ────────────────────────────────────────────────────────────────
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: dev
+      POSTGRES_DB: tasks
+    volumes:
+      - taskdata:/var/lib/postgresql/data   # named volume → data survives restart
+    ports:
+      - "5432:5432"   # expose for local tooling (DBeaver / psql)
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d tasks"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ── App ─────────────────────────────────────────────────────────────────────
+  api:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      # Inside compose the app reaches the DB by service name "db", not localhost
+      DATABASE_URL: postgres://postgres:dev@db:5432/tasks
+      PORT: 3000
+    depends_on:
+      db:
+        condition: service_healthy   # wait for Postgres to be ready before starting
+
+# ── Named volume (data outlives container removals) ──────────────────────────
+volumes:
+  taskdata:
