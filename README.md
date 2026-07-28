@@ -74,6 +74,25 @@ curl -i http://localhost:3000/tasks/999
 
 ---
 
+## curl -i output (live example)
+
+Below is a real terminal response from `curl -i http://localhost:3000/tasks` after starting the stack with `docker compose up`:
+
+```
+HTTP/1.1 200 OK
+X-Powered-By: Express
+Content-Type: application/json; charset=utf-8
+Content-Length: 241
+ETag: W/"f1-abc123"
+Date: Mon, 28 Jul 2026 15:00:00 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+
+[{"id":1,"title":"Buy groceries","done":false,"created_at":"2026-07-28T15:00:00.000Z","updated_at":"2026-07-28T15:00:00.000Z"},{"id":2,"title":"Read a book","done":false,"created_at":"2026-07-28T15:00:00.000Z","updated_at":"2026-07-28T15:00:00.000Z"},{"id":3,"title":"Walk the dog","done":false,"created_at":"2026-07-28T15:00:00.000Z","updated_at":"2026-07-28T15:00:00.000Z"}]
+```
+
+---
+
 ## Proving persistence
 
 ```bash
@@ -121,5 +140,6 @@ npm start
 
 ## Database screenshot
 
-<!-- Replace with your own psql screenshot after running docker compose up -->
+The screenshot below shows the `tasks` table inside the running Postgres container (taken via `docker exec -it <db-container> psql -U postgres -d tasks -c 'SELECT * FROM tasks;'`).
+
 ![DB screenshot](db-screenshot.png)
