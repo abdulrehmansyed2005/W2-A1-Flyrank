@@ -1,145 +1,195 @@
-# Task API — PostgreSQL + Docker (A3)
+# FlyRank Tasks & Auth API
 
-A CRUD REST API for managing tasks, built with **Express** and **PostgreSQL** running in **Docker**.  
-This is the third storage iteration of the same API: memory (A1) → SQLite (A2) → containerized Postgres (A3).  
-The API surface never changed. Only the repository file was swapped each time.
+A secure REST API built with **Node.js + Express**, backed by **PostgreSQL** (via Docker) and **Supabase Auth** for JWT-based authentication.
+
+Built across 4 weekly assignments:
+- **A1–A3**: Task CRUD API with PostgreSQL, Docker, and Swagger UI
+- **A4**: Auth layer — Sign Up, Log In, Log Out, JWT middleware, protected routes, and stretch goals
 
 ---
 
-## One-command startup
+## What this project does
+
+| Layer | What it provides |
+|-------|-----------------|
+| **Task CRUD** | Create, read, update, delete tasks stored in PostgreSQL |
+| **Supabase Auth** | Manages user accounts, hashes passwords, issues signed JWTs — your server never handles credentials directly |
+| **JWT Middleware** | A single reusable `requireAuth` guard that verifies tokens on every protected route |
+| **Swagger UI** | Interactive docs at `/docs` with a 🔒 Authorize button for testing protected routes from the browser |
+| **Rate Limiting** | Brute-force protection on `POST /auth/login` — 5 attempts per 15 minutes |
+
+---
+
+## Environment setup
+
+Copy `.env.example` to `.env` and fill in your values:
 
 ```bash
-# Copy environment template
 cp .env.example .env
-
-# Start everything (Postgres + app)
-docker compose up --build
 ```
 
-App: <http://localhost:3000>  
-Swagger UI: <http://localhost:3000/api-docs>  
-Health check: <http://localhost:3000/health>
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `DATABASE_URL` | PostgreSQL connection string (used by Docker) | `postgres://postgres:dev@localhost:5432/tasks` |
+| `PORT` | Port the server listens on | `3000` |
+| `SUPABASE_URL` | Your Supabase project URL | `https://xxxx.supabase.co` |
+| `SUPABASE_KEY` | Your Supabase **publishable** (anon) key — safe to use in your app | `sb_publishable_...` |
+
+> ⚠️ **Never commit `.env`**. It is in `.gitignore`. Your Supabase keys must not reach GitHub — bots scrape new keys within a minute.
 
 ---
 
-## Environment variables
+## How to run
 
-Copy `.env.example` → `.env` and fill in your values. **Never commit `.env`.**
-
-| Variable | Example | Description |
-|---|---|---|
-| `DATABASE_URL` | `postgres://postgres:dev@localhost:5432/tasks` | Postgres connection string |
-| `PORT` | `3000` | Port the app listens on |
-
----
-
-## Endpoints
-
-| Method | Path | Description | Success | Error |
-|---|---|---|---|---|
-| `GET` | `/tasks` | List all tasks (supports `?search=` and `?done=`) | 200 | — |
-| `GET` | `/tasks/:id` | Get one task | 200 | 404 |
-| `POST` | `/tasks` | Create a task (`{ "title": "..." }`) | 201 | 400 |
-| `PUT` | `/tasks/:id` | Update a task (`{ "title": "...", "done": true }`) | 200 | 404 |
-| `DELETE` | `/tasks/:id` | Delete a task | 204 | 404 |
-| `GET` | `/stats` | Task counts (total / completed / pending) | 200 | — |
-| `GET` | `/health` | Health check — pings the database | 200 | 503 |
-
-> `/todos` is an alias for all `/tasks` routes.
-
----
-
-## Example curl commands
+### Option A — with Docker (recommended, includes PostgreSQL)
 
 ```bash
-# List all tasks
-curl -i http://localhost:3000/tasks
-
-# Create a task
-curl -i -X POST http://localhost:3000/tasks \
-  -H "Content-Type: application/json" \
-  -d '{"title":"Ship A3"}'
-
-# Mark done
-curl -i -X PUT http://localhost:3000/tasks/1 \
-  -H "Content-Type: application/json" \
-  -d '{"done":true}'
-
-# Delete
-curl -i -X DELETE http://localhost:3000/tasks/1
-
-# 404 example
-curl -i http://localhost:3000/tasks/999
+docker compose up
 ```
 
----
-
-## curl -i output (live example)
-
-Below is a real terminal response from `curl -i http://localhost:3000/tasks` after starting the stack with `docker compose up`:
-
-```
-HTTP/1.1 200 OK
-X-Powered-By: Express
-Content-Type: application/json; charset=utf-8
-Content-Length: 241
-ETag: W/"f1-abc123"
-Date: Mon, 28 Jul 2026 15:00:00 GMT
-Connection: keep-alive
-Keep-Alive: timeout=5
-
-[{"id":1,"title":"Buy groceries","done":false,"created_at":"2026-07-28T15:00:00.000Z","updated_at":"2026-07-28T15:00:00.000Z"},{"id":2,"title":"Read a book","done":false,"created_at":"2026-07-28T15:00:00.000Z","updated_at":"2026-07-28T15:00:00.000Z"},{"id":3,"title":"Walk the dog","done":false,"created_at":"2026-07-28T15:00:00.000Z","updated_at":"2026-07-28T15:00:00.000Z"}]
-```
-
----
-
-## Proving persistence
+### Option B — without Docker (Supabase auth only, no task DB)
 
 ```bash
-# 1. Start the stack and create some tasks
-docker compose up --build -d
-curl -X POST http://localhost:3000/tasks -H "Content-Type: application/json" -d '{"title":"Survive restart"}'
-
-# 2. Tear everything down (containers gone, volume stays)
-docker compose down
-
-# 3. Bring it back — rows are still there
-docker compose up -d
-curl http://localhost:3000/tasks   # ← "Survive restart" is still here
-```
-
----
-
-## Architecture
-
-```
-server.js          ← Express routes + Swagger (no DB code)
-src/
-  db.js            ← pg Pool (reads DATABASE_URL)
-  repository.js    ← ONLY file that touches Postgres
-Dockerfile         ← builds the app image
-compose.yaml       ← wires api + db services together
-.env               ← secrets (gitignored)
-.env.example       ← committed template
-```
-
-**Swapping storage = changing one file (`src/repository.js`).** Routes and handlers are untouched across all three storage iterations. This is the architecture proof the assignment asks for.
-
----
-
-## Running locally (without Docker)
-
-```bash
-# Requires a local Postgres or a running `docker run` container
 npm install
-# Set DATABASE_URL in .env pointing to your Postgres
-npm start
+npm run dev
+```
+
+Server starts at `http://localhost:3000`  
+Swagger UI at `http://localhost:3000/docs`
+
+---
+
+## API Reference
+
+### 🔓 Auth endpoints
+
+| Method | Route | Auth required | Status codes | Description |
+|--------|-------|:---:|---|---|
+| `POST` | `/auth/signup` | ❌ | 201 · 400 | Register a new user account |
+| `POST` | `/auth/login` | ❌ | 200 · 400 · 401 · 429 | Log in and receive a JWT access token |
+| `POST` | `/auth/logout` | ✅ Bearer | 204 · 401 | End the session |
+| `POST` | `/auth/refresh` | ❌ | 200 · 400 | Exchange refresh token for a new access token |
+
+### 🌐 Public endpoints
+
+| Method | Route | Auth required | Status codes | Description |
+|--------|-------|:---:|---|---|
+| `GET` | `/public/info` | ❌ | 200 | Public welcome message — no token needed |
+
+### 🔒 Protected endpoints
+
+| Method | Route | Auth required | Status codes | Description |
+|--------|-------|:---:|---|---|
+| `GET` | `/protected/profile` | ✅ Bearer | 200 · 401 | Returns authenticated user's profile (id, email, created_at) |
+| `GET` | `/protected/dashboard` | ✅ Bearer | 200 · 401 | User dashboard with last sign-in and provider info |
+| `GET` | `/protected/admin` | ✅ Bearer | 200 · 401 · **403** | Admin-only route — demonstrates 401 vs 403 |
+
+### 📋 Task CRUD endpoints
+
+| Method | Route | Auth required | Status codes | Description |
+|--------|-------|:---:|---|---|
+| `GET` | `/tasks` | ❌ | 200 | List all tasks (supports `?search=` and `?done=` filters) |
+| `GET` | `/tasks/:id` | ❌ | 200 · 404 | Get a single task |
+| `POST` | `/tasks` | ❌ | 201 · 400 | Create a new task |
+| `PUT` | `/tasks/:id` | ❌ | 200 · 404 | Update a task |
+| `DELETE` | `/tasks/:id` | ❌ | 204 · 404 | Delete a task |
+| `GET` | `/stats` | ❌ | 200 | Task statistics |
+| `GET` | `/health` | ❌ | 200 · 503 | Database health check |
+
+---
+
+## How authentication works
+
+```
+1. Client → POST /auth/signup or /auth/login  → credentials go to Supabase
+2. Supabase → Client                          → returns a signed JWT (access_token)
+3. Client → your server                       → sends JWT in Authorization: Bearer <token>
+4. Server → Supabase                          → verifies the token (supabase.auth.getUser)
+5. Supabase → Server → Client                → verified: route opens; invalid: 401
+```
+
+The `requireAuth` middleware in [`src/authMiddleware.js`](./src/authMiddleware.js) handles steps 3–5 for every protected route. Adding auth to a new route is one word: `requireAuth`.
+
+---
+
+## Using Swagger UI
+
+1. Start the server: `npm run dev`
+2. Open `http://localhost:3000/docs`
+3. Call `POST /auth/login` → copy the `access_token` from the response
+4. Click the **Authorize 🔒** button (top right)
+5. Paste the token → click **Authorize**
+6. Now try `GET /protected/profile` → **Try it out** → **Execute** → you get 200 ✅
+
+---
+
+## Status code reference
+
+| Code | Meaning | When it appears |
+|------|---------|----------------|
+| `200` | OK | Successful GET or login |
+| `201` | Created | Successful signup |
+| `204` | No Content | Successful logout (no body) |
+| `400` | Bad Request | Missing or invalid input fields |
+| `401` | Unauthorized | No token, bad token, or expired token |
+| `403` | Forbidden | Valid token — but you are not allowed (e.g. not an admin) |
+| `429` | Too Many Requests | Rate limit exceeded on `/auth/login` |
+
+### 401 vs 403 — the key difference
+
+> **401 Unauthorized** = "I don't know who you are." The guard at the door doesn't recognise you — either no token was presented, or the token is fake/expired. Fix: log in and provide a valid token.
+>
+> **403 Forbidden** = "I know exactly who you are — and you may not enter." You are authenticated, but not authorised. Fix: you need elevated permissions (e.g. an admin role). Logging in again won't help.
+
+---
+
+## Stretch goals implemented
+
+- ✅ **403 admin route** — `GET /protected/admin` returns 403 for non-admin users with explanation in README
+- ✅ **Refresh token endpoint** — `POST /auth/refresh` exchanges a refresh token for a new access token
+- ✅ **Rate limiting on login** — 5 attempts per 15 minutes on `POST /auth/login`, returns 429
+
+### Why are access tokens short-lived?
+
+Access tokens expire in ~1 hour by default. This limits the damage if a token is intercepted — an attacker's stolen token self-destructs quickly. The refresh token (longer-lived, stored securely) lets the client get a new access token without re-entering credentials.
+
+### Why is instant logout hard with stateless JWTs?
+
+When you call `POST /auth/logout`, Supabase invalidates the refresh token server-side. However, the **access token** technically remains valid for its remaining lifespan (up to 1 hour) because JWTs are stateless — your server verifies the signature, not a session record in a database. True instant revocation requires a token blocklist (a database lookup on every request), which trades the performance benefit of stateless JWTs for immediate revocation control.
+
+---
+
+## Swagger Screenshot
+
+> Start the server and open `/docs` — the 🔒 padlock appears on all protected routes.
+
+---
+
+## Git log (assignment commits)
+
+```
+Stage 0: setup server and supabase client
+Stage 1: signup and login routes working
+Stage 2: public route and unverified protected route
+Stage 3: profile route token verification
+Stage 4: auth middleware and logout endpoint
+Stage 5: Swagger UI documentation with bearer auth
+Stage 6: publish to GitHub and write README
 ```
 
 ---
 
-## Database screenshot
+## Project structure
 
-The screenshot below shows the `tasks` table inside the running Postgres container (taken via `docker exec -it <db-container> psql -U postgres -d tasks -c 'SELECT * FROM tasks;'`).
-
-![DB screenshot](db-screenshot.png)
+```
+├── server.js              # All routes + Swagger config
+├── src/
+│   ├── supabaseClient.js  # Supabase singleton (Stage 0)
+│   ├── authMiddleware.js  # Reusable JWT guard (Stage 4)
+│   ├── repository.js      # PostgreSQL task queries
+│   └── db.js              # pg Pool connection
+├── .env                   # Secrets — git-ignored
+├── .env.example           # Placeholder keys — committed
+├── compose.yaml           # Docker Compose (PostgreSQL)
+└── Dockerfile
+```
