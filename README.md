@@ -161,7 +161,7 @@ When you call `POST /auth/logout`, Supabase invalidates the refresh token server
 
 ## Swagger Screenshot
 
-> Start the server and open `/docs` — the 🔒 padlock appears on all protected routes.
+![Swagger UI showing lock icons on protected routes](./swagger-screenshot.png)
 
 ---
 
